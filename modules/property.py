@@ -61,6 +61,12 @@ class FluidProperty():
         Fa = P - self.vapor_pressure(fluid_code, a)
         Fb = P - self.vapor_pressure(fluid_code, b)
 
+        # for the cases where a or b are the roots
+        if (abs(Fa) < self.eps):
+            return a
+        elif (abs(Fb) < self.eps):
+            return b
+
         # loop until the convergence criterion is achieved
         while(abs(Fa*Fb) > self.eps):
 

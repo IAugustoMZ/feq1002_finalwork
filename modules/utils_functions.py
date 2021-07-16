@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 import json
 
@@ -37,3 +38,43 @@ class utils:
         data = data.loc[data['x']==vapor_fraction,:]
 
         return data
+
+    # scatterplot of residues and predictions
+    def scatter_model_residues(self, values_list, var_name):
+        """
+        plots the expected and the predicted values from a specific model
+
+        args: vector of expected (real) values, vector of predicted values
+            string containing variable name
+
+        returns: plots
+        """
+
+        # extract values
+        expected = values_list[0]
+        predicted = values_list[1]
+
+        # calculate residues
+        residues = [e-p for e,p in zip(expected, predicted)]
+
+
+        # build plots
+        fig = plt.figure(figsize=(14,7))
+
+        # expected vs predicted
+        ax1 = fig.add_subplot(1,2,1)
+        ax1.plot(expected, expected, 'r-', label = 'Perfect Prediction')
+        ax1.plot(expected, predicted, 'ko', label = 'True Prediction')
+        ax1.set_xlabel(var_name + '\nExpected Values', size = 14)
+        ax1.set_ylabel(var_name + '\nPredicted Values', size = 14)
+        ax1.set_title('Prediction Assessment\n' + var_name, size = 16)
+        ax1.legend(prop={'size': 12})
+        ax1.grid()
+
+        # residues histogram
+        ax2 = fig.add_subplot(1,2,2)
+        ax2.hist(residues, color = 'lightgreen', alpha = 0.5)
+        ax2.set_xlabel(var_name + '\nResidues', size = 14)
+        ax2.set_ylabel('Frequency', size = 14)
+        ax2.set_title('Prediction Errors Distribution\n' + var_name, size = 16)
+        ax2.grid()
