@@ -12,11 +12,9 @@ from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
 # utilitary functions
 class utils:
 
-    # seed for reproducibility
-    RANDOM_SEED = 1002
-
-    # filepath for saving models (depends on the file system architecture)
-    MODEL_SAVE_FILEPATH = '../models'
+    # important constants
+    RANDOM_SEED = 1002                  # seed for reproducibility
+    MODEL_SAVE_FILEPATH = '../models'   # filepath for saving models (depends on the file system architecture)
 
     # construct method
     def __init__(self) -> None:
@@ -25,8 +23,8 @@ class utils:
         self.fluid_dict = json.load(f)
 
 
-    # import dataset and filter by refrigerant and saturated state
-    def load_filter_data(self, vapor_fraction, fluid_code, complete_filepath):
+    # import dataset and filter by fluid and saturated state
+    def load_filter_data(self, vapor_fraction: float, fluid_code: int, complete_filepath: str) -> pd.DataFrame:
         """
         load data from the selected filepath, filters it by the selected saturation state
         and by the selected fluid
@@ -51,7 +49,7 @@ class utils:
         return data
 
     # scatterplot of residues and predictions
-    def scatter_model_residues(self, values_list, var_name):
+    def scatter_model_residues(self, values_list: list, var_name: str) -> None:
         """
         plots the expected and the predicted values from a specific model
 
@@ -95,7 +93,7 @@ class utils:
     def model_training_selection(self, x, y, property_name, times_to_interpolate = 1, decision_score = 'mae'):
         """
         performs model training, cross validation and selection using
-        Leave One Out cross validation. The models tested are LinearRegression or DecisionTrees
+        KFold cross validation. The models tested are LinearRegression or DecisionTrees
         
         args: predictors arrays and target array, string containing property name,
             integer defining the number os successive linear interpolations,
