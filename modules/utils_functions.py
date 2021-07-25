@@ -90,7 +90,7 @@ class utils:
         ax2.grid()
 
     # model training and evaluation
-    def model_training_selection(self, x, y, property_name, times_to_interpolate = 1, decision_score = 'mae'):
+    def model_training_selection(self, x: pd.DataFrame, y: pd.DataFrame, property_name: str, times_to_interpolate: int = 1, decision_score: str = 'mae') -> None:
         """
         performs model training, cross validation and selection using
         KFold cross validation. The models tested are LinearRegression or DecisionTrees
@@ -192,7 +192,7 @@ class utils:
         joblib.dump(BEST_MODEL, os.path.join(self.MODEL_SAVE_FILEPATH, model_name))
 
     # data augmentation through interpolation
-    def data_augmentation(self, x, y, sort_var_name = 't', times_to_interpolate = 1):
+    def data_augmentation(self, x: pd.DataFrame, y: pd.DataFrame, sort_var_name: str = 't', times_to_interpolate: int = 1) -> pd.DataFrame:
         """
         performs data augmentation based on prior knowledge of chemical engineering
         which states that if we have a thermodynamic relation between two intensive variables X and Y,

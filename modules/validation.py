@@ -21,7 +21,7 @@ class validate():
         self.fluid_dict = json.load(f)
 
     # vapor pressure validation
-    def vapor_pressure(self, data, fluid_code):
+    def vapor_pressure(self, data: pd.DataFrame, fluid_code: int) -> None:
         """
         method for validation of vapor pressure using experimental data
 
@@ -57,7 +57,7 @@ class validate():
         ut.scatter_model_residues(values_list, var_name)
     
     # saturation temperature
-    def sat_temperature(self, data, fluid_code):
+    def sat_temperature(self, data: pd.DataFrame, fluid_code: int) -> None:
         """
         method for validation of saturation temperature model
 
@@ -94,7 +94,7 @@ class validate():
         ut.scatter_model_residues(values_list, var_name)
 
     # saturation properties
-    def saturation_properties(self, data, fluid_code, property):
+    def saturation_properties(self, data: pd.DataFrame, fluid_code: int, property: str) -> None:
         """
         method to validate the machine learning models to predict saturation properties using 
         temperature and pressure as inputs

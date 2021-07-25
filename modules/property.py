@@ -1,7 +1,6 @@
 from numpy.lib.function_base import corrcoef
 import pandas as pd
 import numpy as np
-import os
 import json
 from utils_functions import utils
 
@@ -9,10 +8,11 @@ from utils_functions import utils
 class FluidProperty():
 
     # constantes importantes
-    eps = 0.0001            # numerical convergence tolerance
-    R = 8.314472            # ideal gas constant (J/mol.K)
-    Tref = 298.15           # reference state temperature (K)
-    Pref = 101325           # reference state pressure (Pa)
+    eps = 0.0001                        # numerical convergence tolerance
+    R = 8.314472                        # ideal gas constant (J/mol.K)
+    Tref = 298.15                       # reference state temperature (K)
+    Pref = 101325/(1*(10**6))           # reference state pressure (MPa)
+    cache_integral = {}                 # cache dictionary to store already calculated integrals
 
     # construct method
     def __init__(self) -> None:
@@ -26,9 +26,9 @@ class FluidProperty():
         calculates the vapor pressure for the given fluid at the selected
         temperature
 
-        args: fluid code, temperature in Kelvin
+        args: fluid code, temperature [K]
 
-        returns: the saturation pressure in MPa
+        returns: the saturation pressure [MPa]
         """
 
         # extract the correlation constants
@@ -52,9 +52,9 @@ class FluidProperty():
         """
         calculates the saturation temperature, given the pressure
 
-        args: fluid_code, pressure in MPa
+        args: fluid_code, pressure [MPa]
 
-        returns: saturation temperature in K
+        returns: saturation temperature [K]
         """
 
         # extract the initial pair of temperature to be tested
@@ -100,10 +100,10 @@ class FluidProperty():
         calculate the root of cubic equation of state, based on
         compressibility factor polynomial form
 
-        args: temperature in Kelvin, pressure in MPa
+        args: temperature [K], pressure [MPa]
             fluid code, eos code
 
-        returns: compressibility factor root
+        returns: compressibility factor root [adm.]
         """
 
         # extract critical constants for the selected fluid
@@ -118,13 +118,7 @@ class FluidProperty():
         P = P*(1*(10**6))
 
         # calculate attraction and repulsion parameters based on chosen eos
-        if eos == 'vW':
-            # use van der Waals constants
-            u = 0
-            m = 0
-            b = (self.R*Tc)/(8*Pc)
-            a = (27*(self.R**2)*(Tc**2))/(64*Pc)
-        elif eos == 'rk':
+        if eos == 'rk':
             # use Redlich-Kwong constants
             u = 1
             m = 0
@@ -172,9 +166,9 @@ class FluidProperty():
         evaluates the expression of ideal gas heat capacity based on 
         chosen fluid
 
-        args: temperature in Kelvin, fluid code
+        args: temperature [K], fluid code
 
-        returns: ideal gas heat capacity in J/kg.K
+        returns: ideal gas heat capacity in [J/kg.K]
         """
 
         # extract fluid molar mass and correlation constants
@@ -200,9 +194,9 @@ class FluidProperty():
         """
         calculates the value of liquid heat capacity
 
-        args: temperature in Kelvin, fluid code
+        args: temperature [K], fluid code
 
-        returns: the liquid heat capacity in J/kg.K
+        returns: the liquid heat capacity in [J/kg.K]
         """
 
         # extract fluid molar mass, critical temperature and correlation constants
@@ -235,3 +229,225 @@ class FluidProperty():
         Cp = Cp/MM
 
         return Cp
+
+    # integrate cp to calculate enthalpy and entropy
+    def integrate_cp(self, T_list: list, fluid_code: int, therm_func: str, state: str) -> float:
+        """
+        performs a numerical integration of heat capacity by using the Simpson composite rule
+
+        args: list containing temperature integration limits [K], fluid_code, thermodynamic function code
+            ('h' for enthalpy and 's' for entropy), state of aggregation code ('l' for liquid and 'v' for vapor)
+
+        returns: enthalpy [J/kg] or entropy [J/kg.K]
+        """
+
+        # if initial temperature is not informed, use reference state
+        Tf = T_list[0]
+        if len(T_list) == 1:
+            Ti = self.Tref
+        else:
+            Ti = T_list[1]
+
+        # create hash key to lookup cached integrals
+        hash_key = str(round(Tf,2))+str(round(Ti,2))+str(fluid_code)+therm_func+state
+
+        # before calculate the integral, try to found an already calculated value
+        try:
+            integral = self.cache_integral[hash_key]
+        except:
+            # if no cached value is saved, calcule the integral numerically
+
+            # define grid points number
+            N = 1000
+
+            # create integration grid mesh
+            T = np.linspace(Ti, Tf, N)
+
+            # calculate integration grid step
+            h = T[1] - T[0]
+
+            # iterate over all temperature points to calculate integral
+            integral = 0
+            for i in range(N):
+
+                # evaluate function based on state of aggregation informed
+                if state == 'v':
+                    f = self.ideal_gas_cp(T[i], fluid_code)
+                else:
+                    f = self.liquid_cp(T[i], fluid_code)
+
+                # if the desired thermodynamic funciont is entropy, divide by T
+                if therm_func == 's':
+                    f /= T[i]
+
+                # perform correction based on Simpson's rule
+                if ((i == 0) | (i == N-1)):
+                    f = f
+                elif i % 2 == 1:
+                    f *= 4
+                elif i % 2 == 0:
+                    f *= 2
+
+                # update sum of integral
+                integral += f
+
+            # after looping, multiply integral by h/3
+            integral *= (h/3)
+
+            # cache integral value for future reference
+            self.cache_integral[hash_key] = integral
+
+            return integral
+
+    # residual properties
+    def residual_properties(self, T: float, P: float, fluid_code: int, eos_code: str, therm_func: str) -> float:
+        """
+        calculates the residual thermodynamic property using the equation of state approach
+
+        args: temperature [K], pressure [MPa], fluid code, eos code, desired residual thermodynamic function
+
+        returns: residual enthalpy [J/kg] or residual entropy [J/kg.K]
+        """
+
+        # extract physical data of the fluid
+        MM = self.fluid_dict[str(fluid_code)]['molar_mass']             # molar mass [kg/kmol]
+        Tc = self.fluid_dict[str(fluid_code)]['Tc']                     # critical temperature [K]
+        Pc = self.fluid_dict[str(fluid_code)]['Pc']                     # critical pressure [MPa]
+        w = self.fluid_dict[str(fluid_code)]['omega']                   # accentric factor [adm.]
+
+        # calculate reduced coordinates
+        Tr = T/Tc                                                       # reduced temperature
+        Pr = P/Pc                                                       # reduced pressure
+        
+        # create eos parameter dictionary
+        eos_dict ={
+            'rk':{
+                'alpha_Tr': Tr**(-0.5),
+                'sigma': 1,
+                'eps': 0,
+                'omega': 0.08664,
+                'psi': 0.42748
+            },
+            'srk':{
+                'alpha_Tr': (1+((0.48 + (1.574*w) - (0.176*(w**2)))*(1-(Tr**(0.5)))))**2,
+                'sigma': 1,
+                'eps': 0,
+                'omega': 0.08644,
+                'psi': 0.42748
+            },
+            'pr':{
+                'alpha_Tr': (1+((0.37464 + (1.54226*w) - (0.26992*(w**2)))*(1-(Tr**(0.5)))))**2,
+                'sigma': 1+np.sqrt(2),
+                'eps': 1-np.sqrt(2),
+                'omega': 0.07780,
+                'psi': 0.45724
+            }
+        }
+
+        # select parameters based on eos code
+        alpha_Tr = eos_dict[eos_code]['alpha_Tr']
+        sigma = eos_dict[eos_code]['sigma']
+        eps = eos_dict[eos_code]['eps']
+        omega = eos_dict[eos_code]['omega']
+        psi = eos_dict[eos_code]['psi']
+
+        # calculate parameters independent from compressibility factor
+        beta = omega*(Pr/Tr)
+        q = (psi*alpha_Tr)/(omega*Tr)
+
+        # estimate derivative of alpha_Tr
+        diff_alphaTr = self.differential_alphaTr(T, fluid_code, eos_code)
+
+        # calculate the compressibility factor
+        Z = self.eos_solve(T, P, fluid_code, eos_code)
+
+        # calculate the I factor
+        I = (1/(sigma-eps))*np.log((Z+(sigma*beta))/(Z+(eps*beta)))
+
+        # calculate the residual properties
+        # residual enthalpy [J/kg.K]
+        H_R = ((Z-1+((diff_alphaTr-1)*q*I))*(self.R*T))/(MM/1000)
+
+        # residual entropy [J/kg.K]
+        S_R = ((np.log(Z-beta)+(diff_alphaTr*q*I))*self.R)/(MM/1000)
+
+        # return the desired thermodynamic function
+        if therm_func == 'h':
+            return H_R
+        else:
+            return S_R
+
+    # derivative of alpha_Tr
+    def differential_alphaTr(self, T: float, fluid_code: int, eos_code: str) -> float:
+        """
+        calculates the derivative of ln (alpha_Tr) in respect to ln (Tr) by numerical approximation
+        of centered differences
+
+        args: temperature [K], fluid code, equation of state code
+
+        returns: the derivative estimation of ln (alpha_Tr) in respect to ln (Tr)
+        """
+
+        # extract physical properties of the fluid
+        w = self.fluid_dict[str(fluid_code)]['omega']           # accentric factor [adm.]
+        Tc = self.fluid_dict[str(fluid_code)]['Tc']             # critical temperature [K]
+
+        # calculate the limits of derivative
+        T_high = T + self.eps
+        T_low = T - self.eps
+
+        # calculate the reduced coordinates of the limits
+        Tr_high = T_high/Tc
+        Tr_low = T_low/Tc
+
+        # calculate the variation of logarithm of Tr
+        lnTr_high = np.log(Tr_high)
+        lnTr_low = np.log(Tr_low)
+        delta_lnTr = lnTr_high - lnTr_low
+
+        # calculate the alphaTr according to selected eos
+        if eos_code == 'rk':
+            alphaTr_high = Tr_high**(-0.5)
+            alphaTr_low = Tr_low**(-0.5)
+        elif eos_code == 'srk':
+            alphaTr_high = (1+((0.48 + (1.574*w) - (0.176*(w**2)))*(1-(Tr_high**(0.5)))))**2
+            alphaTr_low = (1+((0.48 + (1.574*w) - (0.176*(w**2)))*(1-(Tr_low**(0.5)))))**2
+        elif eos_code == 'pr':
+            alphaTr_high = (1+((0.37464 + (1.54226*w) - (0.26992*(w**2)))*(1-(Tr_high**(0.5)))))**2
+            alphaTr_low = (1+((0.37464 + (1.54226*w) - (0.26992*(w**2)))*(1-(Tr_low**(0.5)))))**2
+
+        # calculate the variation of logarithm of alphaTr
+        ln_alphaTr_high = np.log(alphaTr_high)
+        ln_alphaTr_low = np.log(alphaTr_low)
+        delta_ln_alphaTr = ln_alphaTr_high-ln_alphaTr_low
+
+        # calculate the derivative
+        return delta_ln_alphaTr/delta_lnTr
+
+    # thermodynamic property 
+    def thermodynamic_prop(self, T: float, P: float, fluid_code: str, eos_code: str, therm_prop: str) -> float:
+        """
+        calculates the real gas thermodynamic property using the a equation of state approach
+        to calculate the residual properties. The ideal gas approach is calculated by integration of cp
+        This method applies only to real vapor phase
+
+        args: temperature [K], pressure [MPa], fluid code, eos code, thermodynamic function
+
+        returns: enthalpy [J/kg] / entropy [J/kg.K]
+        """
+
+        # extract fluid molar mass
+        MM = self.fluid_dict[str(fluid_code)]['molar_mass']
+
+        # calculate the ideal gas part of the thermodynamic property
+        ideal_part = self.integrate_cp([T, self.Tref], fluid_code, therm_prop, state = 'v')
+
+        # if the entropy is desired, the pressure correction must be made
+        if therm_prop == 's':
+            ideal_part -= (self.R/(MM/1000))*np.log(P/self.Pref)
+
+        # calculate the residual property
+        residual_part = self.residual_properties(T, P, fluid_code, eos_code, therm_prop)
+
+        # calculate the desired property
+        return ideal_part + residual_part    
