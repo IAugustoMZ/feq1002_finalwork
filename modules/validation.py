@@ -174,4 +174,62 @@ class validate():
         ax2.set_xlabel(property_dict[property] + ' - [' + self.fluid_dict['prop_units'][property] + ']', size = 14)
         ax2.set_ylabel('MPa - [' + self.fluid_dict['prop_units']['P'] + ']', size = 14)
         ax2.legend(prop={'size': 12})
-        ax2.grid()        
+        ax2.grid()
+
+    # superheated vapor thermodynamic property validation
+    def superheated_vapor(self, data: pd.DataFrame, title_str: str) -> None:
+        """
+        plots curves from superheated curves thermodynamic properties to validate EoS models
+
+        args: dataframe containing experimental and predicted values, string containing title
+            desired text
+
+        returns: plots of thermodynamic properties
+        """
+
+        # create list of pressure labels
+        p_labels = ['P = ' + str(k) + ' [MPa]' for k in data['p'].unique()]
+
+        # color palette
+        colors = ['black', 'blue', 'red', 'green', 'fuchsia', 'orange', 'gray']
+
+        # build plot
+        fig = plt.figure(figsize=(14,7))
+
+        # enthalpy plot
+        ax1 = fig.add_subplot(1,2,1)
+        for i in range(len(data['p'].unique())):
+            # plot experimental data curves
+            ax1.plot(data.loc[data['p']==data['p'].unique()[i], 't'], 
+            data.loc[data['p']==data['p'].unique()[i], 'deltaH'], 'o', color = colors[i], 
+            label = p_labels[i])
+
+            # plot predicted data curves
+            ax1.plot(data.loc[data['p']==data['p'].unique()[i], 't'], 
+            data.loc[data['p']==data['p'].unique()[i], 'deltaH_pred'], '--', color = colors[i], 
+            label = p_labels[i] + ' predicted')
+
+        ax1.set_xlabel('Temperature [K]', size = 14)
+        ax1.set_ylabel('Enthalpy [kJ/kg]', size = 14)
+        ax1.legend(prop={'size': 8})
+        ax1.set_title('Superheated Vapor Enthalpy\n' + title_str, size = 16)
+        ax1.grid()
+
+        # entropy plot
+        ax2 = fig.add_subplot(1,2,2)
+        for i in range(len(data['p'].unique())):
+            # plot experimental data curves
+            ax2.plot(data.loc[data['p']==data['p'].unique()[i], 't'], 
+            data.loc[data['p']==data['p'].unique()[i], 'deltaS'], 'o', color = colors[i], 
+            label = p_labels[i])
+
+            # plot predicted data curves
+            ax2.plot(data.loc[data['p']==data['p'].unique()[i], 't'], 
+            data.loc[data['p']==data['p'].unique()[i], 'deltaS_pred'], '--', color = colors[i], 
+            label = p_labels[i] + ' predicted')
+
+        ax2.set_xlabel('Temperature [K]', size = 14)
+        ax2.set_ylabel('Entropy [kJ/kg.K]', size = 14)
+        ax2.legend(prop={'size': 8})
+        ax2.set_title('Superheated Vapor Entropy\n' + title_str, size = 16)
+        ax2.grid()

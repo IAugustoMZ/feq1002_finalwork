@@ -68,6 +68,11 @@ class utils:
         res_df['predicted'] = predicted
         res_df['residues'] = res_df['real'] - res_df['predicted']
 
+        # print prediction performance indicators
+        mae = mean_absolute_error(res_df['real'], res_df['predicted'])
+        r2 = r2_score(res_df['real'], res_df['predicted'])
+        text = '\nMAE: %.4f - R2 score: %.4f'%(mae, r2)
+
         # build plots
         fig = plt.figure(figsize=(14,7))
 
@@ -77,7 +82,7 @@ class utils:
         ax1.plot(res_df['real'], res_df['predicted'], 'ko', label = 'True Prediction')
         ax1.set_xlabel(var_name + '\nExpected Values', size = 14)
         ax1.set_ylabel(var_name + '\nPredicted Values', size = 14)
-        ax1.set_title('Prediction Assessment\n' + var_name, size = 16)
+        ax1.set_title('Prediction Assessment\n' + var_name + text, size = 16)
         ax1.legend(prop={'size': 12})
         ax1.grid()
 
@@ -86,7 +91,7 @@ class utils:
         ax2.hist(res_df['residues'], color = 'lightgreen', alpha = 0.5)
         ax2.set_xlabel(var_name + '\nResidues', size = 14)
         ax2.set_ylabel('Frequency', size = 14)
-        ax2.set_title('Prediction Errors Distribution\n' + var_name, size = 16)
+        ax2.set_title('Prediction Errors Distribution\n' + var_name + text, size = 16)
         ax2.grid()
 
     # model training and evaluation

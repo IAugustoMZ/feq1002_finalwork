@@ -1,8 +1,11 @@
-from numpy.lib.function_base import corrcoef
 import pandas as pd
 import numpy as np
 import json
-from utils_functions import utils
+import joblib
+import sys
+import os
+sys.path.append('.')
+from modules.utils_functions import utils
 
 # calculate fluid property
 class FluidProperty():
@@ -10,14 +13,13 @@ class FluidProperty():
     # constantes importantes
     eps = 0.0001                        # numerical convergence tolerance
     R = 8.314472                        # ideal gas constant (J/mol.K)
-    Tref = 298.15                       # reference state temperature (K)
-    Pref = 101325/(1*(10**6))           # reference state pressure (MPa)
     cache_integral = {}                 # cache dictionary to store already calculated integrals
+    MODELS_SAVEPATH = './models/'       # saturated models filepath
 
     # construct method
     def __init__(self) -> None:
         # create component key dictionary
-        f = open('../data/fluid_prop.json', 'r')
+        f = open('./data/fluid_prop.json', 'r')
         self.fluid_dict = json.load(f)
 
     # calculate saturation temperature or pressure, depending on input
@@ -244,7 +246,7 @@ class FluidProperty():
         # if initial temperature is not informed, use reference state
         Tf = T_list[0]
         if len(T_list) == 1:
-            Ti = self.Tref
+            Ti = self.fluid_dict[str(fluid_code)]['Tref']
         else:
             Ti = T_list[1]
 
@@ -297,7 +299,7 @@ class FluidProperty():
             # cache integral value for future reference
             self.cache_integral[hash_key] = integral
 
-            return integral
+        return integral
 
     # residual properties
     def residual_properties(self, T: float, P: float, fluid_code: int, eos_code: str, therm_func: str) -> float:
@@ -425,7 +427,7 @@ class FluidProperty():
         return delta_ln_alphaTr/delta_lnTr
 
     # thermodynamic property 
-    def thermodynamic_prop(self, T: float, P: float, fluid_code: str, eos_code: str, therm_prop: str) -> float:
+    def superHeatVap_prop(self, T: float, P: float, fluid_code: str, eos_code: str, therm_prop: str) -> float:
         """
         calculates the real gas thermodynamic property using the a equation of state approach
         to calculate the residual properties. The ideal gas approach is calculated by integration of cp
@@ -440,14 +442,102 @@ class FluidProperty():
         MM = self.fluid_dict[str(fluid_code)]['molar_mass']
 
         # calculate the ideal gas part of the thermodynamic property
-        ideal_part = self.integrate_cp([T, self.Tref], fluid_code, therm_prop, state = 'v')
+        ideal_part = self.integrate_cp([T, self.fluid_dict[str(fluid_code)]['Tref']], fluid_code, 
+                                        therm_prop, state = 'v')
 
         # if the entropy is desired, the pressure correction must be made
         if therm_prop == 's':
-            ideal_part -= (self.R/(MM/1000))*np.log(P/self.Pref)
+            ideal_part -= (self.R/(MM/1000))*np.log(P/self.fluid_dict[str(fluid_code)]['Pref'])
 
         # calculate the residual property
         residual_part = self.residual_properties(T, P, fluid_code, eos_code, therm_prop)
 
         # calculate the desired property
-        return ideal_part + residual_part    
+        return ideal_part + residual_part
+
+    # thermodynamic hypothetic paths to calculate properties
+    def calculate_thermo_prop(self, T: float, P: float, fluid_code: int, x: float) -> list:
+        """
+        calcultes the thermodynamic properties (enthalpy and entropy) based on the 
+        selected fluid according to the appropriate reference state
+
+        args: temperature [K], pressure [MPa], fluid code, vapor fraction
+
+        returns: list with enthalpy [J/kg] and entropy [J/kg.K]
+        """
+
+        # extract fluid reference state and eos
+        Tref = self.fluid_dict[str(fluid_code)]['Tref']
+        Pref = self.fluid_dict[str(fluid_code)]['Pref']
+        eos_code = self.fluid_dict[str(fluid_code)]['eos']
+        comp_name = self.fluid_dict[str(fluid_code)]['name']
+        MM = self.fluid_dict[str(fluid_code)]['molar_mass']
+
+        # load saturation models
+        models_list = os.listdir(self.MODELS_SAVEPATH)
+        models_list = [k for k in models_list if k.find(comp_name)!=-1]
+        h_models = [k for k in models_list if k.find('Enthalpy')!=-1]
+        s_models = [k for k in models_list if k.find('Entropy')!=-1]
+
+        # select case for property calculation
+        case = self.property_case(T, P, fluid_code)
+        
+        # calculate properties based on the thermodynamic case
+        if case in [1, 2, 4]:
+            # if the case is 1, 2 or 4, then the fluid is in superheated vapor state, and then
+            # the properties are only the delta between the real state and the reference state
+            h = self.superHeatVap_prop(T, P, fluid_code, eos_code, 'h') - self.superHeatVap_prop(Tref, Pref, fluid_code, eos_code, 'h')
+            s = self.superHeatVap_prop(T, P, fluid_code, eos_code, 's') - self.superHeatVap_prop(Tref, Pref, fluid_code, eos_code, 's')
+        elif case in [5]:
+            # if the case is 3, then the fluid is saturated mixture at
+            # reference temperature and thus, the saturation properties must be applied
+            h_vap_model = joblib.load(os.path.join(self.MODELS_SAVEPATH, [m for m in h_models if m.find('Vapor')!=-1][0]))
+            h_liquid_model = joblib.load(os.path.join(self.MODELS_SAVEPATH, [m for m in h_models if m.find('Liquid')!=-1][0]))
+
+            # prediction of saturated vapor and liquid enthalpy and conversion to J/kg
+            h_sat_vap = (h_vap_model.predict([[T,P]]))*1000/(MM/1000)
+            h_sat_liq = (h_liquid_model.predict([[T,P]]))*1000/(MM/1000)
+
+
+            # correction in respect to reference state
+            h_sat_vap -= self.superHeatVap_prop(Tref, Pref, fluid_code, eos_code, 'h')
+            h_sat_liq -= self.superHeatVap_prop(Tref, Pref, fluid_code, eos_code, 'h')
+
+        # return [h,s]
+
+    # case for property calculation
+    def property_case(self, T: float, P: float, fluid_code: int) -> int:
+        """
+        determines which is the case of fluid property calculation by comparing 
+        the system's temperature and pressure to reference state
+
+        args: temperature [K], pressure [MPa], fluid code
+        """
+
+        # extract fluid reference state and eos
+        Tref = self.fluid_dict[str(fluid_code)]['Tref']
+        Pref = self.fluid_dict[str(fluid_code)]['Pref']
+        eos_code = self.fluid_dict[str(fluid_code)]['eos']
+
+        # compare and return approriate cases
+        if (T>Tref):
+            if P < Pref:
+                return 1
+            elif P == Pref:
+                return 2
+            else:
+                return 3
+        elif (T == Tref):
+            if P < Pref:
+                return 4
+            elif P == Pref:
+                return 5
+            else:
+                return 6
+        else:
+            if P < Pref:
+                return 7
+            elif P == Pref:
+                return 8
+            else:
+                return 9
