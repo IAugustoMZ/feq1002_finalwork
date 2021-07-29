@@ -467,11 +467,17 @@ class FluidProperty():
         """
 
         # extract fluid reference state and eos
-        Tref = self.fluid_dict[str(fluid_code)]['Tref']
-        Pref = self.fluid_dict[str(fluid_code)]['Pref']
-        eos_code = self.fluid_dict[str(fluid_code)]['eos']
-        comp_name = self.fluid_dict[str(fluid_code)]['name']
-        MM = self.fluid_dict[str(fluid_code)]['molar_mass']
+        Tref = self.fluid_dict[str(fluid_code)]['Tref']             # reference temperature [K]
+        Pref = self.fluid_dict[str(fluid_code)]['Pref']             # reference pressure [MPa]
+        eos_code = self.fluid_dict[str(fluid_code)]['eos']          # eos to use
+        h_ref = self.fluid_dict[str(fluid_code)]['h_ref']           # reference enthalpy [kJ/kg]
+        s_ref = self.fluid_dict[str(fluid_code)]['s_ref']           # reference entropy  [kJ/kg.K]
+        comp_name = self.fluid_dict[str(fluid_code)]['name']        # fluid name
+        MM = self.fluid_dict[str(fluid_code)]['molar_mass']         # fluid molar mass [kg/kmol]
+
+        # convert reference states properties to J/kg
+        h_ref *= 1000/(MM/1000)
+        s_ref *= 1000/(MM/1000)
 
         # load saturation models
         models_list = os.listdir(self.MODELS_SAVEPATH)
@@ -479,65 +485,66 @@ class FluidProperty():
         h_models = [k for k in models_list if k.find('Enthalpy')!=-1]
         s_models = [k for k in models_list if k.find('Entropy')!=-1]
 
-        # select case for property calculation
-        case = self.property_case(T, P, fluid_code)
-        
-        # calculate properties based on the thermodynamic case
-        if case in [1, 2, 4]:
-            # if the case is 1, 2 or 4, then the fluid is in superheated vapor state, and then
-            # the properties are only the delta between the real state and the reference state
-            h = self.superHeatVap_prop(T, P, fluid_code, eos_code, 'h') - self.superHeatVap_prop(Tref, Pref, fluid_code, eos_code, 'h')
-            s = self.superHeatVap_prop(T, P, fluid_code, eos_code, 's') - self.superHeatVap_prop(Tref, Pref, fluid_code, eos_code, 's')
-        elif case in [5]:
-            # if the case is 3, then the fluid is saturated mixture at
-            # reference temperature and thus, the saturation properties must be applied
-            h_vap_model = joblib.load(os.path.join(self.MODELS_SAVEPATH, [m for m in h_models if m.find('Vapor')!=-1][0]))
-            h_liquid_model = joblib.load(os.path.join(self.MODELS_SAVEPATH, [m for m in h_models if m.find('Liquid')!=-1][0]))
+        # calculate saturation enthalpy and entropy
+        h_vap_model = joblib.load(os.path.join(self.MODELS_SAVEPATH, [m for m in h_models if m.find('Vapor')!=-1][0]))
+        h_liquid_model = joblib.load(os.path.join(self.MODELS_SAVEPATH, [m for m in h_models if m.find('Liquid')!=-1][0]))
+        s_vap_model = joblib.load(os.path.join(self.MODELS_SAVEPATH, [m for m in s_models if m.find('Vapor')!=-1][0]))
+        s_liquid_model = joblib.load(os.path.join(self.MODELS_SAVEPATH, [m for m in s_models if m.find('Liquid')!=-1][0]))
 
-            # prediction of saturated vapor and liquid enthalpy and conversion to J/kg
-            h_sat_vap = (h_vap_model.predict([[T,P]]))*1000/(MM/1000)
-            h_sat_liq = (h_liquid_model.predict([[T,P]]))*1000/(MM/1000)
+        # calculate the saturation temperature at pressure
+        T_sat= self.sat_temperature(fluid_code, P)
 
+        # prediction of saturated vapor and liquid enthalpy and conversion to J/kg
+        h_sat_vap = (h_vap_model.predict([[T_sat,P]])[0])*1000/(MM/1000)
+        h_sat_liq = (h_liquid_model.predict([[T_sat,P]])[0])*1000/(MM/1000)
 
-            # correction in respect to reference state
-            h_sat_vap -= self.superHeatVap_prop(Tref, Pref, fluid_code, eos_code, 'h')
-            h_sat_liq -= self.superHeatVap_prop(Tref, Pref, fluid_code, eos_code, 'h')
+        # prediction of saturated vapor and liquid entropy and conversion to J/kg.K
+        s_sat_vap = (s_vap_model.predict([[T_sat,P]])[0])*1000/(MM/1000)
+        s_sat_liq = (s_liquid_model.predict([[T_sat,P]])[0])*1000/(MM/1000)
 
-        # return [h,s]
+        # compare temperature to Tsat to determine state of the fluid
+        if(abs(T-T_sat)<self.eps):
+            # if the temperature is equal to the saturation value, then
+            # it is necesary to calculate using vapor fraction
+            h = (x*(h_sat_vap-h_ref))+((1-x)*(h_sat_liq-h_ref))
+            s = (x*(s_sat_vap-s_ref))+((1-x)*(s_sat_liq-s_ref))
+        elif (T < T_sat):
+            # if the temperature is lower than saturation temperature at same 
+            # pressure, the fluid is at subcooled liquid state
+            h = self.integrate_cp([T, Tref], fluid_code, 'h', 'l')
+            s = self.integrate_cp([T, Tref], fluid_code, 's', 'l')
+        elif (T > T_sat):
+            # if the temperature is higher than saturation temperature at same 
+            # pressure, the fluid is at superheated vapor state
+            h1 = self.integrate_cp([T_sat, Tref], fluid_code, 'h', 'l')         # heating liquid from Tref to Tsat
+            h2 = (h_sat_vap - h_sat_liq)                                        # vaporization at Tsat
+            h3 = self.superHeatVap_prop(T, P, fluid_code, eos_code, 'h')
+            h3 -= self.superHeatVap_prop(T_sat, P, fluid_code, eos_code, 'h')   # heating from Tsat to T as real gas
+            h = h1 + h2 + h3
 
-    # case for property calculation
-    def property_case(self, T: float, P: float, fluid_code: int) -> int:
+            s1 = self.integrate_cp([T_sat, Tref], fluid_code, 's', 'l')         # heating liquid from Tref to Tsat
+            s2 = (s_sat_vap - s_sat_liq)                                        # vaporization at Tsat
+            s3 = self.superHeatVap_prop(T, P, fluid_code, eos_code, 's')
+            s3 -= self.superHeatVap_prop(T_sat, P, fluid_code, eos_code, 's')   # heating from Tsat to T as real gas
+            s = s1 + s2 + s3
+
+        return [h,s]
+
+    # p,x calculation
+    def P_x_prop_calc(self, P: float, x: float, fluid_code: int) -> list:
         """
-        determines which is the case of fluid property calculation by comparing 
-        the system's temperature and pressure to reference state
+        calculates the temperature and the thermodynamic properties
+        by giving systems pressure and vapor fraction
 
-        args: temperature [K], pressure [MPa], fluid code
+        args: systems pressure [MPa], vapor fraction [adm.], fluid code
+
+        returns: list with temperature [K], enthalpy [J/kg] and entropy [kJ/kg.K]
         """
 
-        # extract fluid reference state and eos
-        Tref = self.fluid_dict[str(fluid_code)]['Tref']
-        Pref = self.fluid_dict[str(fluid_code)]['Pref']
-        eos_code = self.fluid_dict[str(fluid_code)]['eos']
+        # calculate saturation temperature
+        T_sat = self.sat_temperature(fluid_code, P)
 
-        # compare and return approriate cases
-        if (T>Tref):
-            if P < Pref:
-                return 1
-            elif P == Pref:
-                return 2
-            else:
-                return 3
-        elif (T == Tref):
-            if P < Pref:
-                return 4
-            elif P == Pref:
-                return 5
-            else:
-                return 6
-        else:
-            if P < Pref:
-                return 7
-            elif P == Pref:
-                return 8
-            else:
-                return 9
+        # calculate thermodynamic properties
+        props = self.calculate_thermo_prop(T_sat, P, fluid_code, x)
+
+        return [T_sat, props[0], props[1]]
