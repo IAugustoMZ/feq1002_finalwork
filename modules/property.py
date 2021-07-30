@@ -548,3 +548,110 @@ class FluidProperty():
         props = self.calculate_thermo_prop(T_sat, P, fluid_code, x)
 
         return [T_sat, props[0], props[1]]
+
+    # P/s or P/h calculation
+    def P_s_h_prop_calc(self, P: float, prop: str, prop_val: float, fluid_code: int) -> list:
+        """
+        calculates the properties of the fluid by informing the pressure and
+        the specific entalpy or specific entropy
+
+        args: pressure [MPa], property name string, specific enthalpy [J/kg] or specific entropy [J/kg.K], fluid code
+
+        returns: list containing temperature [K], enthalpy [J/kg] and vapor fraction
+                if aplicable
+        """
+
+        # extract lower end of temperature to test
+        a = self.fluid_dict[str(fluid_code)]['Tref']
+        
+        # definition of an unreachable temperature as superior limit
+        b = 1000
+
+        # definition of which property is to be used as reference
+        if prop == 'h':
+            p = 0
+        elif prop == 's':
+            p = 1
+
+        # calculate the initial values of entropy delta
+        Fa = prop_val - self.calculate_thermo_prop(a, P, fluid_code, 1)[p]
+        Fb = prop_val - self.calculate_thermo_prop(b, P, fluid_code, 1)[p]
+
+        # for the cases where the inferior limit of the superior limit are the roots
+        if (abs(Fa)/prop_val < self.eps):
+            T = a
+        elif (abs(Fb)/prop_val < self.eps):
+            T = b
+
+        # loop until the convergence criterion is achieved
+        while(abs(Fa*Fb)/prop_val > self.eps):
+
+            # calculate the point c by the regula false equation
+            c = b - ((Fb*(b-a))/(Fb-Fa))
+
+            # evaluate function at point c
+            Fc = prop_val - self.calculate_thermo_prop(c, P, fluid_code, 1)[p]
+
+            # evaluate options
+            if (Fa*Fc < 0):
+                b = c
+            elif(Fc*Fb < 0):
+                a = c
+            elif(abs(Fc)/prop_val <= self.eps):
+                T = c
+
+            # recalculate the evaluations of Fa and Fb
+            Fa = prop_val - self.calculate_thermo_prop(a, P, fluid_code, 1)[p]
+            Fb = prop_val - self.calculate_thermo_prop(b, P, fluid_code, 1)[p]
+
+            # test if one of the ends are the root
+            if (abs(Fa)/prop_val < self.eps):
+                T = a
+            elif (abs(Fb)/prop_val < self.eps):
+                T = b
+
+        # once the desired root has been found, calculate the saturation 
+        # pressure to determine which state the fluid is at
+        state_list = self.determine_state(T, P, prop, prop_val, fluid_code)
+
+        # after determining the state, calculate the properties acordingly
+        results = self.calculate_thermo_prop(T, P, fluid_code, state_list[0])
+
+        return [T, results[0], results[1], state_list[0], state_list[1]]
+
+    # determine fluid state
+    def determine_state(self, T: float, P: float, property: str, property_val: float, fluid_code: int) -> list:
+        """
+        determines the thermodynamic state of a fluid based on its temperature and pressure
+        if the state is saturated mixture, it can estimate the vapor fraction
+
+        args: temperature [K], pressure [MPa], property to compare (enthalpy [J/kg]
+            or entropy [J/kg.K]), property value, fluid code
+
+        returns: list containing thermodynamic state and vapor fraction
+        """
+
+        # estimate the vapor pressure at saturation point
+        P_sat = self.vapor_pressure(fluid_code, T)
+
+        # compare to real pressure to determine state
+        if (P < P_sat):
+            # superheated vapor
+            x = 1
+            state = 'shv'
+        elif (P > P_sat):
+            # subcooled liquid
+            x = 0
+            state = 'subliq'
+        elif (abs(P-P_sat) < self.eps):
+            # saturated fluid
+            if property == 'h':
+                i = 0
+            elif property == 's':
+                i = 1
+            prop_liq_sat = self.calculate_thermo_prop(T, P_sat, fluid_code, 0)[i]
+            prop_vap_sat = self.calculate_thermo_prop(T, P_sat, fluid_code, 1)[i]
+            x = (property_val-prop_liq_sat)/(prop_vap_sat - prop_liq_sat)
+            state = 'satmix'
+
+        return [x, state]
