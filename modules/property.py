@@ -11,7 +11,7 @@ from modules.utils_functions import utils
 class FluidProperty():
 
     # constantes importantes
-    eps = 0.0001                        # numerical convergence tolerance
+    eps = 0.001                         # numerical convergence tolerance
     R = 8.314472                        # ideal gas constant (J/mol.K)
     cache_integral = {}                 # cache dictionary to store already calculated integrals
     MODELS_SAVEPATH = './models/'       # saturated models filepath
@@ -68,13 +68,13 @@ class FluidProperty():
         Fb = P - self.vapor_pressure(fluid_code, b)
 
         # for the cases where a or b are the roots
-        if (abs(Fa) < self.eps):
+        if (abs(Fa/P) < self.eps):
             return a
-        elif (abs(Fb) < self.eps):
+        elif (abs(Fb/P) < self.eps):
             return b
 
         # loop until the convergence criterion is achieved
-        while(abs(Fa*Fb) > self.eps):
+        while(abs(Fa*Fb)/P > self.eps):
 
             # calculate the point c by the regula false equation
             c = b - ((Fb*(b-a))/(Fb-Fa))
@@ -87,12 +87,18 @@ class FluidProperty():
                 b = c
             elif(Fc*Fb < 0):
                 a = c
-            elif(abs(Fc) <= self.eps):
+            elif(abs(Fc)/P <= self.eps):
                 return c
 
             # recalculate the evaluations of Fa and Fb
             Fa = P - self.vapor_pressure(fluid_code, a)
             Fb = P - self.vapor_pressure(fluid_code, b)
+
+            # for the cases where a or b are the roots
+            if (abs(Fa/P) < self.eps):
+                return a
+            elif (abs(Fb/P) < self.eps):
+                return b
 
         return c
 
@@ -503,7 +509,8 @@ class FluidProperty():
         s_sat_liq = (s_liquid_model.predict([[T_sat,P]])[0])*1000/(MM/1000)
 
         # compare temperature to Tsat to determine state of the fluid
-        if(abs(T-T_sat)<self.eps):
+        if(abs(T-T_sat)/T_sat<self.eps):
+            print('Saturation')
             # if the temperature is equal to the saturation value, then
             # it is necesary to calculate using vapor fraction
             h = (x*(h_sat_vap-h_ref))+((1-x)*(h_sat_liq-h_ref))

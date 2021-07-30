@@ -60,5 +60,6 @@ h_real = h_suc + w_real
 cond_disc_real = fp.P_s_h_prop_calc(P_disc, 'h', h_real, 2)
 print(cond_disc_real)
 
+
 comp = design.compressor_unit([T_suc, P_suc, 1], P_disc, 0.8, 100)
 print(comp)
