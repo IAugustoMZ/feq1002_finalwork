@@ -14,7 +14,9 @@ from modules import equipments
 warnings.filterwarnings('ignore')
 RANDOM_SEED = 1002
 fp = property.FluidProperty()
-design = equipments.RefrigerationCycle(fluid_code = 2)
+design = equipments.RefrigerationCycle(fluid_code = 2, Q_evap = 1500)
+
+###########################################################################################
 
 # simulating compressor design
 T_suc = 16.85 + 273.15

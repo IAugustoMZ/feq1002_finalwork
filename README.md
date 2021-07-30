@@ -16,7 +16,7 @@ The Python implemention aims to help the fast evaluation of thermodynamic proper
 
 <br>
 
-To design a combined thermodynamic cycle and to evaluate the thermodynamic performance from each individual cycle, through an energetic and an exertic analysis. These analysis must indicate options to enhance performance. The combined cycle must mantain a refrigeration capacity of 1,5000 RT (refrigeration tons) in the evaporator unit - 1 RT = 12,000 BTU/h
+To design a combined thermodynamic cycle and to evaluate the thermodynamic performance from each individual cycle, through an energetic and an exertic analysis. These analysis must indicate options to enhance performance. The combined cycle must mantain a refrigeration capacity of 1,500 RT (refrigeration tons) in the evaporator unit - 1 RT = 12,000 BTU/h
 
 <br>
 
@@ -28,7 +28,7 @@ To design a combined thermodynamic cycle and to evaluate the thermodynamic perfo
 
 <br>
 
-The refrigeration cycle is a conventional cycle of vapor compression and expasion, with the four basic units: compression, condenser, isoenthalpic expansion valve and evaporator. O cycle must offer a refrigeration rate of 1,5000 RT at the evapaorator unit. This "cold demand" is used to cool a water stream at 100 kPa, from 60 $^{o}C$ to 15 $^{o}C$, which will be used as cold utility at distillation unit condensers.
+The refrigeration cycle is a conventional cycle of vapor compression and expasion, with the four basic units: compression, condenser, isoenthalpic expansion valve and evaporator. O cycle must offer a refrigeration rate of 1,500 RT at the evapaorator unit. This "cold demand" is used to cool a water stream at 100 kPa, from 60 °C to 15 °C, which will be used as cold utility at distillation unit condensers.
 
 The available refrigerants are ammonia (R717) or methane (R50). The temperatures and pressures from each stream are selected by engineering teams.
 
